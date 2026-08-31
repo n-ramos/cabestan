@@ -1,0 +1,43 @@
+# Publie une version : pousser un tag `v*` construit l'app macOS, la signe en
+# ad hoc et l'attache à une release GitHub sous forme de zip.
+#
+# L'app n'étant pas notariée, macOS la met en quarantaine au téléchargement :
+# clic droit → Ouvrir à la première ouverture, ou
+# `xattr -dr com.apple.quarantine /Applications/Cabestan.app`.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - run: npm run tauri build -- --bundles app
+      - name: Signature ad hoc et archive
+        run: |
+          app="src-tauri/target/release/bundle/macos/Cabestan.app"
+          codesign --force --deep --sign - "$app"
+          ditto -c -k --keepParent "$app" "Cabestan-${GITHUB_REF_NAME}.zip"
+      - name: Release GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Cabestan $GITHUB_REF_NAME" \
+            --generate-notes \
+            "Cabestan-${GITHUB_REF_NAME}.zip"
